@@ -3,6 +3,7 @@
 #include <Adafruit_ILI9341.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Digital_7_V424pt7b.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266_Heweather.h>
@@ -10,6 +11,7 @@
 #include <Fonts\FreeMonoBold18pt7b.h>
 #include <Fonts\FreeMonoBold9pt7b.h>
 #include <SPI.h>
+#include <WeatherFont20pt7b.h>
 #include <lasttime.h>
 #include <sys/time.h>
 #include <time.h>
@@ -31,7 +33,7 @@ String Lang = "en";									  // 语言 英文-en/中文-zh
 
 //时间
 time_t now;
-struct tm* timeInfo;
+struct tm *timeInfo, lastTimeInfo;
 const String WDAY_NAMES[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 const String MONTH_NAMES[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
@@ -46,7 +48,8 @@ void DrawDateTime();
 void UpdateNTP();
 void PrintTime();
 void SyncTime();
-void tftSet(const GFXfont*, uint16_t, uint8_t);
+void copyTime(tm *a, tm *b);
+void tftSet(const GFXfont *, uint16_t, uint8_t);
 void TestDrawRuler();
 
 /*********入口************/
@@ -55,7 +58,7 @@ void initSetial() {	 //初始化串口
 	Serial.println("\n\n[WeatherDesktopNTP_ILI9341]\n");
 }
 void initTFT() {  //初始化TFT屏幕
-	tft.begin(80000000);
+	tft.begin(800000000ul);
 	tft.setRotation(1);
 	tft.fillScreen(ILI9341_BLACK);
 	tft.setFont(&FreeMonoBold9pt7b);
@@ -120,25 +123,46 @@ void DrawWeather() {  //绘制天气信息
 	}
 }
 void DrawDate() {  //绘制日期
-	tft.fillRect(0, 0, 170, 10, ILI9341_BLACK);
+	//tft.fillRect(0, 0, 170, 10 * 2, ILI9341_BLACK);
 	tftSet(&FreeMonoBold9pt7b, ILI9341_WHITE, 1);
 
 	tft.setCursor(1, 16);
+	tft.setTextColor(ILI9341_BLACK);
+	tft.printf("%s %s %02d %4d",
+			   WDAY_NAMES[lastTimeInfo.tm_wday].c_str(),
+			   MONTH_NAMES[lastTimeInfo.tm_mon].c_str(),
+			   lastTimeInfo.tm_mday,
+			   lastTimeInfo.tm_year + 1900);
+	tft.setCursor(1, 16);
+	tft.setTextColor(ILI9341_WHITE);
 	tft.printf("%s %s %02d %4d",
 			   WDAY_NAMES[timeInfo->tm_wday].c_str(),
 			   MONTH_NAMES[timeInfo->tm_mon].c_str(),
 			   timeInfo->tm_mday,
 			   timeInfo->tm_year + 1900);
+	yield();
+	copyTime(&lastTimeInfo, timeInfo);
 }
 void DrawTime() {  //绘制时间
-	tft.fillRect(80, 40, 170, 15, ILI9341_BLACK);
-	tftSet(&FreeMonoBold18pt7b, ILI9341_WHITE, 1);
+	//tft.fillRect(0, 35, 320, 60 * 4 / 3, ILI9341_BLACK);
+	//tft.drawRect(0, 35, 320, 60 * 4 / 3, ILI9341_RED);
+	tftSet(&Digital_7_V424pt7b, ILI9341_WHITE, 2);
 
-	tft.setCursor(80, 64);
+	tft.setCursor(1, 100);
+	tft.setTextColor(ILI9341_BLACK);
+	tft.printf("%02d:%02d:%02d",
+			   lastTimeInfo.tm_hour,
+			   lastTimeInfo.tm_min,
+			   lastTimeInfo.tm_sec);
+	yield();
+	tft.setCursor(1, 100);
+	tft.setTextColor(ILI9341_WHITE);
 	tft.printf("%02d:%02d:%02d",
 			   timeInfo->tm_hour,
 			   timeInfo->tm_min,
 			   timeInfo->tm_sec);
+	yield();
+	copyTime(&lastTimeInfo, timeInfo);
 }
 void UpdateNTP() {	//网络同步时间
 #define TZ 8		// (utc+) TZ in hours
@@ -158,24 +182,21 @@ void DrawDateTime() {  //绘制时间和日期
 	DrawTime();
 	DrawDate();
 }
-void PrintTime() {	//打印时间
-	now = time(nullptr);
-	struct tm* timeInfo;
-	timeInfo = localtime(&now);
-
-	Serial.printf("%s %s %02d %4d %02d:%02d:%02d \n",
-				  WDAY_NAMES[timeInfo->tm_wday].c_str(),
-				  MONTH_NAMES[timeInfo->tm_mon].c_str(),
-				  timeInfo->tm_mday,
-				  timeInfo->tm_year + 1900,
-				  timeInfo->tm_hour, timeInfo->tm_min, timeInfo->tm_sec);
-}
-void tftSet(const GFXfont* font, uint16_t color, uint8_t size) {  //TFT 设置字体/颜色/大小
+// void PrintTime() {	//打印时间
+// 	Serial.printf("%s %s %02d %4d %02d:%02d:%02d \n",
+// 				  WDAY_NAMES[timeInfo.tm_wday].c_str(),
+// 				  MONTH_NAMES[timeInfo.tm_mon].c_str(),
+// 				  timeInfo.tm_mday,
+// 				  timeInfo.tm_year + 1900,
+// 				  timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
+// }
+void tftSet(const GFXfont *font, uint16_t color, uint8_t size) {  //TFT 设置字体/颜色/大小
 	tft.setFont(font);
 	tft.setTextColor(color);
 	tft.setTextSize(size);
 }
 void TestDrawRuler() {	//测试_绘制点阵尺
+	return;
 	for (int x = 0; x < tft.width(); x += 10) {
 		for (int y = 0; y < tft.height(); y += 10) {
 			tft.drawPixel(x, y, ILI9341_YELLOW);
@@ -187,4 +208,13 @@ void TestDrawRuler() {	//测试_绘制点阵尺
 			}
 		}
 	}
+}
+void copyTime(tm *a, tm *b) {
+	a->tm_hour = b->tm_hour;
+	a->tm_min = b->tm_min;
+	a->tm_sec = b->tm_sec;
+	a->tm_wday = b->tm_wday;
+	a->tm_mon = b->tm_mon;
+	a->tm_mday = b->tm_mday;
+	a->tm_year = b->tm_year;
 }
