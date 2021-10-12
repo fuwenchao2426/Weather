@@ -3,12 +3,10 @@
 #include <Adafruit_ILI9341.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <Digital_7_V424pt7b.h>
+#include <Digital_7_V448pt7b.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266_Heweather.h>
-#include <Fonts/Org_01.h>
-#include <Fonts\FreeMonoBold18pt7b.h>
 #include <Fonts\FreeMonoBold9pt7b.h>
 #include <SPI.h>
 #include <WeatherFont20pt7b.h>
@@ -36,9 +34,15 @@ time_t now;
 struct tm *timeInfo, lastTimeInfo;
 const String WDAY_NAMES[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 const String MONTH_NAMES[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+String lastDateStr, lastTimeStr;
 
 //定时任务
 FTask TaskNTP, TaskDrawWeather, TaskDrawDateTime, TaskDrawTestRuler;
+
+struct rect {
+	int16_t x, y;
+	uint16_t w, h;
+} recta, rectb;
 
 /**********方法************/
 void DrawWeather();
@@ -48,8 +52,8 @@ void DrawDateTime();
 void UpdateNTP();
 void PrintTime();
 void SyncTime();
-void copyTime(tm *a, tm *b);
 void tftSet(const GFXfont *, uint16_t, uint8_t);
+void getTFTTextDifRect(String, String, int16_t, int16_t);
 void TestDrawRuler();
 
 /*********入口************/
@@ -61,14 +65,13 @@ void initTFT() {  //初始化TFT屏幕
 	tft.begin(800000000ul);
 	tft.setRotation(1);
 	tft.fillScreen(ILI9341_BLACK);
-	tft.setFont(&FreeMonoBold9pt7b);
-	tft.setTextColor(ILI9341_WHITE);
-	tft.setTextSize(1);
+	yield();
+	tftSet(&FreeMonoBold9pt7b, ILI9341_WHITE, 1);
 }
 void initWifi() {  //初始化Wifi
 	WiFi.mode(WIFI_STA);
 	WiFi.begin(SSID, PSWD);
-	tft.setCursor(0, 20);
+	tft.setCursor(0, 100);
 	tft.printf("Connet to %s\n", SSID);
 	Serial.printf("Connet to %s\n", SSID);
 	yield();
@@ -78,8 +81,10 @@ void initWifi() {  //初始化Wifi
 		delay(500);
 		yield();
 	}
-	tft.println();
-	Serial.println();
+	tft.println("OK");
+	Serial.println("OK");
+	tft.fillScreen(ILI9341_BLACK);
+	yield();
 }
 
 void setup() {
@@ -88,11 +93,12 @@ void setup() {
 	initWifi();
 
 	weatherNow.config(UserKey, Location, Unit, Lang);
-
 	TaskNTP.initM(UpdateNTP, 5);
 	TaskDrawDateTime.initS(DrawDateTime, 1);
 	TaskDrawWeather.initM(DrawWeather, 1.5);
 	TaskDrawTestRuler.initS(TestDrawRuler, 5);
+	UpdateNTP();
+	UpdateNTP();
 }
 
 void loop() {
@@ -103,66 +109,55 @@ void loop() {
 }
 
 void DrawWeather() {  //绘制天气信息
-	tft.fillScreen(ILI9341_BLACK);
-	tft.setCursor(0, 160);
+	//tft.fillScreen(ILI9341_BLACK);
+	tft.fillRect(0, 200, 320, 80, ILI9341_BLACK);
+	yield();
+	tft.setCursor(0, 200);
 
 	if (weatherNow.get()) {	 // 获取天气更新
 		tftSet(&FreeMonoBold9pt7b, ILI9341_WHITE, 1);
 
-		//tft.printf("\tUpdate: %s\n", weatherNow.getLastUpdate().substring(0, 16).c_str());
-		tft.printf("\tTemp: %d(%d)", weatherNow.getTemp(), weatherNow.getFeelLike());
+		tft.printf("Weather: %s\n", weatherNow.getWeatherText().c_str());
+		tft.printf("Temp: %d(%d)", weatherNow.getTemp(), weatherNow.getFeelLike());
 		tft.setCursor(tft.width() - 14 * 8, tft.getCursorY());
 		tft.printf("Hum: %.1f\n", weatherNow.getHumidity());
-		//tft.printf("\tIcon: %d\n", weatherNow.getIcon());
-		tft.printf("\tWeather: %s\n", weatherNow.getWeatherText().c_str());
-		tft.printf("\twindDir: %s %d\n", weatherNow.getWindDir().c_str(), weatherNow.getWindScale());
-		tft.printf("\tPrecip: %.1f\n", weatherNow.getPrecip());
+		tft.printf("Wind: %s %d", weatherNow.getWindDir().c_str(), weatherNow.getWindScale());
+		tft.setCursor(tft.width() - 14 * 8, tft.getCursorY());
+		tft.printf("Rain: %.1f\n", weatherNow.getPrecip());
 
+		//tft.printf("Icon: %d\n", weatherNow.getIcon());
+		//tft.printf("Update: %s\n", weatherNow.getLastUpdate().substring(0, 16).c_str());
 	} else {
 		tft.println("Update Failed...");
 	}
 }
 void DrawDate() {  //绘制日期
-	//tft.fillRect(0, 0, 170, 10 * 2, ILI9341_BLACK);
 	tftSet(&FreeMonoBold9pt7b, ILI9341_WHITE, 1);
 
-	tft.setCursor(1, 16);
-	tft.setTextColor(ILI9341_BLACK);
-	tft.printf("%s %s %02d %4d",
-			   WDAY_NAMES[lastTimeInfo.tm_wday].c_str(),
-			   MONTH_NAMES[lastTimeInfo.tm_mon].c_str(),
-			   lastTimeInfo.tm_mday,
-			   lastTimeInfo.tm_year + 1900);
-	tft.setCursor(1, 16);
-	tft.setTextColor(ILI9341_WHITE);
-	tft.printf("%s %s %02d %4d",
-			   WDAY_NAMES[timeInfo->tm_wday].c_str(),
-			   MONTH_NAMES[timeInfo->tm_mon].c_str(),
-			   timeInfo->tm_mday,
-			   timeInfo->tm_year + 1900);
-	yield();
-	copyTime(&lastTimeInfo, timeInfo);
+	char aaa[64];
+	snprintf(aaa, sizeof(aaa), "%s %s %02d %4d",
+			 WDAY_NAMES[timeInfo->tm_wday].c_str(),
+			 MONTH_NAMES[timeInfo->tm_mon].c_str(),
+			 timeInfo->tm_mday,
+			 timeInfo->tm_year + 1900);
+	String bb = String(aaa);
+	Serial.println(bb);
+	getTFTTextDifRect(bb, lastDateStr, 1, 16);
+	lastDateStr = bb;
 }
 void DrawTime() {  //绘制时间
-	//tft.fillRect(0, 35, 320, 60 * 4 / 3, ILI9341_BLACK);
-	//tft.drawRect(0, 35, 320, 60 * 4 / 3, ILI9341_RED);
-	tftSet(&Digital_7_V424pt7b, ILI9341_WHITE, 2);
+	tftSet(&Digital_7_V448pt7b, ILI9341_WHITE, 1);
 
-	tft.setCursor(1, 100);
-	tft.setTextColor(ILI9341_BLACK);
-	tft.printf("%02d:%02d:%02d",
-			   lastTimeInfo.tm_hour,
-			   lastTimeInfo.tm_min,
-			   lastTimeInfo.tm_sec);
-	yield();
-	tft.setCursor(1, 100);
-	tft.setTextColor(ILI9341_WHITE);
-	tft.printf("%02d:%02d:%02d",
-			   timeInfo->tm_hour,
-			   timeInfo->tm_min,
-			   timeInfo->tm_sec);
-	yield();
-	copyTime(&lastTimeInfo, timeInfo);
+	char aaa[64];
+	snprintf(aaa, sizeof(aaa), "%02d:%02d:%02d",
+			 timeInfo->tm_hour,
+			 timeInfo->tm_min,
+			 timeInfo->tm_sec);
+	String bb = String(aaa);
+	Serial.println(bb);
+	getTFTTextDifRect(bb, lastTimeStr, 20, 130);
+	lastTimeStr = bb;
+
 }
 void UpdateNTP() {	//网络同步时间
 #define TZ 8		// (utc+) TZ in hours
@@ -171,6 +166,9 @@ void UpdateNTP() {	//网络同步时间
 #define TZ_SEC ((TZ)*3600)
 #define DST_SEC ((DST_MN)*60)
 	configTime(TZ_SEC, DST_SEC, "pool.ntp.org", "0.cn.pool.ntp.org", "1.cn.pool.ntp.org");
+	yield();
+	SyncTime();
+	DrawDate();
 	Serial.println("NTP sync!");
 }
 void SyncTime() {  //获取本地时间
@@ -180,7 +178,9 @@ void SyncTime() {  //获取本地时间
 void DrawDateTime() {  //绘制时间和日期
 	SyncTime();
 	DrawTime();
-	DrawDate();
+	if (timeInfo->tm_hour == 0 && timeInfo->tm_min == 0 && timeInfo->tm_sec == 0) {
+		DrawDate();
+	}
 }
 // void PrintTime() {	//打印时间
 // 	Serial.printf("%s %s %02d %4d %02d:%02d:%02d \n",
@@ -209,12 +209,23 @@ void TestDrawRuler() {	//测试_绘制点阵尺
 		}
 	}
 }
-void copyTime(tm *a, tm *b) {
-	a->tm_hour = b->tm_hour;
-	a->tm_min = b->tm_min;
-	a->tm_sec = b->tm_sec;
-	a->tm_wday = b->tm_wday;
-	a->tm_mon = b->tm_mon;
-	a->tm_mday = b->tm_mday;
-	a->tm_year = b->tm_year;
+void getTFTTextDifRect(String news, String olds, int16_t cx, int16_t cy) {	//差异化更新文本
+	int a, l = min(news.length(), olds.length());
+	for (int i = 0; i < l; i++) {
+		if (news[i] != olds[i]) {
+			a = i;
+			break;
+		}
+	}
+	String b = olds.substring(0, a);
+	tft.getTextBounds(b, cx, cy, &recta.x, &recta.y, &recta.w, &recta.h);
+	tft.getTextBounds(olds, cx, cy, &rectb.x, &rectb.y, &rectb.w, &rectb.h);
+	recta.x += recta.w;
+	//tft.drawRect(recta.x, recta.y, rectb.w - recta.w, rectb.h, ILI9341_RED);
+	tft.setCursor(recta.x, cy);
+	tft.setTextColor(ILI9341_BLACK);
+	tft.print(olds.substring(a, olds.length()));
+	tft.setCursor(recta.x, cy);
+	tft.setTextColor(ILI9341_WHITE);
+	tft.print(news.substring(a, news.length()));
 }
