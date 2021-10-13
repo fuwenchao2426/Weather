@@ -1,3 +1,9 @@
+/*******************************************************
+ * 
+ * 
+ * 
+ ******************************************************/
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_ILI9341.h>
@@ -53,7 +59,7 @@ void UpdateNTP();
 void PrintTime();
 void SyncTime();
 void tftSet(const GFXfont *, uint16_t, uint8_t);
-void getTFTTextDifRect(String, String, int16_t, int16_t);
+void getTFTTextDifRect(String, String *, int16_t, int16_t);
 void TestDrawRuler();
 
 /*********入口************/
@@ -62,7 +68,7 @@ void initSetial() {	 //初始化串口
 	Serial.println("\n\n[WeatherDesktopNTP_ILI9341]\n");
 }
 void initTFT() {  //初始化TFT屏幕
-	tft.begin(800000000ul);
+	tft.begin();
 	tft.setRotation(1);
 	tft.fillScreen(ILI9341_BLACK);
 	yield();
@@ -90,22 +96,28 @@ void initWifi() {  //初始化Wifi
 void setup() {
 	initSetial();
 	initTFT();
-	initWifi();
+	//initWifi();
 
-	weatherNow.config(UserKey, Location, Unit, Lang);
-	TaskNTP.initM(UpdateNTP, 5);
-	TaskDrawDateTime.initS(DrawDateTime, 1);
-	TaskDrawWeather.initM(DrawWeather, 1.5);
-	TaskDrawTestRuler.initS(TestDrawRuler, 5);
-	UpdateNTP();
-	UpdateNTP();
+	// weatherNow.config(UserKey, Location, Unit, Lang);
+	// TaskNTP.initM(UpdateNTP, 5);
+	// TaskDrawDateTime.initS(DrawDateTime, 1);
+	// TaskDrawWeather.initM(DrawWeather, 1.5);
+	// TaskDrawTestRuler.initS(TestDrawRuler, 5);
+	// UpdateNTP();
+	// UpdateNTP();
 }
-
+String sss = "";
+String *strp = &sss;
+int i = 0;
 void loop() {
-	TaskNTP.run();
-	TaskDrawDateTime.run();
-	TaskDrawWeather.run();
-	TaskDrawTestRuler.run();
+	// TaskNTP.run();
+	// TaskDrawDateTime.run();
+	// TaskDrawWeather.run();
+	// TaskDrawTestRuler.run();
+	String tt = "HeloWorld";
+	tt += i++;
+	tftSet(&FreeMonoBold9pt7b, ILI9341_WHITE, 1);
+	getTFTTextDifRect(tt, strp, 20, 100);
 }
 
 void DrawWeather() {  //绘制天气信息
@@ -142,7 +154,7 @@ void DrawDate() {  //绘制日期
 			 timeInfo->tm_year + 1900);
 	String bb = String(aaa);
 	Serial.println(bb);
-	getTFTTextDifRect(bb, lastDateStr, 1, 16);
+	//getTFTTextDifRect(bb, lastDateStr, 1, 16);
 	lastDateStr = bb;
 }
 void DrawTime() {  //绘制时间
@@ -155,9 +167,8 @@ void DrawTime() {  //绘制时间
 			 timeInfo->tm_sec);
 	String bb = String(aaa);
 	Serial.println(bb);
-	getTFTTextDifRect(bb, lastTimeStr, 20, 130);
+	//getTFTTextDifRect(bb, lastTimeStr, 20, 130);
 	lastTimeStr = bb;
-
 }
 void UpdateNTP() {	//网络同步时间
 #define TZ 8		// (utc+) TZ in hours
@@ -209,23 +220,53 @@ void TestDrawRuler() {	//测试_绘制点阵尺
 		}
 	}
 }
-void getTFTTextDifRect(String news, String olds, int16_t cx, int16_t cy) {	//差异化更新文本
-	int a, l = min(news.length(), olds.length());
-	for (int i = 0; i < l; i++) {
-		if (news[i] != olds[i]) {
+void getTFTTextDifRect(String news, String *olds, int16_t cx, int16_t cy) {	 //差异化更新文本
+
+	if (olds->length() != 0) {
+		int a = 0;
+		for (int i = 0; i < olds->length(); i++) {
 			a = i;
-			break;
+			if (news.charAt(i) != olds->charAt(i)) break;
 		}
+
+		Serial.print(a);
+		Serial.print(",");
+		Serial.print(news);
+		Serial.print(",");
+		Serial.print(olds->c_str());
+		Serial.print(",");
+		Serial.print(olds->substring(0, a));
+		Serial.print(",");
+		Serial.println(olds->substring(a, olds->length()));
+
+		tft.getTextBounds(olds->substring(0, a), cx, cy, &recta.x, &recta.y, &recta.w, &recta.h);
+		//tft.drawRect(recta.x, recta.y, recta.w, recta.h, ILI9341_RED);
+
+		tft.getTextBounds(olds->substring(a, olds->length()), recta.x + recta.w, cy, &rectb.x, &rectb.y, &rectb.w, &rectb.h);
+		//tft.drawRect(rectb.x, rectb.y, rectb.w, rectb.h, ILI9341_BLUE);
+		//delay(2000);
+
+		//原字符串后部分写黑
+		//tft.drawRect(recta.x, recta.y, recta.w, recta.h, ILI9341_BLACK);  //原字符串前部分
+		//tft.drawRect(rectb.x, rectb.y, rectb.w, rectb.h, ILI9341_BLACK);  //原字符串后部分
+		tft.setCursor(recta.x + recta.w, cy);
+		tft.setTextColor(ILI9341_BLACK);
+		tft.print(olds->substring(a, olds->length()));
+		delay(2000);
+
+		//写入新字符串后部分
+		tft.setCursor(recta.x + recta.w, cy);
+		tft.setTextColor(ILI9341_WHITE);
+		tft.print(news.substring(a, news.length()));
+		delay(2000);
+	} else {
+		tft.setTextColor(ILI9341_WHITE);
+		tft.setCursor(cx, cy);
+		tft.print(news);
+		Serial.println("fiest write");
+		delay(2000);
 	}
-	String b = olds.substring(0, a);
-	tft.getTextBounds(b, cx, cy, &recta.x, &recta.y, &recta.w, &recta.h);
-	tft.getTextBounds(olds, cx, cy, &rectb.x, &rectb.y, &rectb.w, &rectb.h);
-	recta.x += recta.w;
-	//tft.drawRect(recta.x, recta.y, rectb.w - recta.w, rectb.h, ILI9341_RED);
-	tft.setCursor(recta.x, cy);
-	tft.setTextColor(ILI9341_BLACK);
-	tft.print(olds.substring(a, olds.length()));
-	tft.setCursor(recta.x, cy);
-	tft.setTextColor(ILI9341_WHITE);
-	tft.print(news.substring(a, news.length()));
+
+	olds->clear();
+	olds->concat(news);
 }
