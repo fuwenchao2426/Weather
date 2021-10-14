@@ -15,7 +15,7 @@
 #include <ESP8266_Heweather.h>
 #include <Fonts\FreeMonoBold9pt7b.h>
 #include <SPI.h>
-#include <WeatherFont20pt7b.h>
+#include <WeatherIcon_32px.h>
 #include <lasttime.h>
 #include <sys/time.h>
 #include <time.h>
@@ -50,6 +50,47 @@ struct rect {
 	int16_t x, y;
 	uint16_t w, h;
 } recta, rectb;
+const PROGMEM uint16_t *WeatherIconCode[] = {
+	Bitmap100, Bitmap101, Bitmap102, Bitmap103,
+	Bitmap104, /*Bitmap150, Bitmap151, Bitmap152,*/
+	Bitmap153, Bitmap154, Bitmap300, Bitmap301,
+	Bitmap302, Bitmap303, Bitmap304, Bitmap305,
+	Bitmap306, Bitmap307, Bitmap308, Bitmap309,
+	Bitmap310, Bitmap311, Bitmap312, Bitmap313,
+	Bitmap314, Bitmap315, Bitmap316, /*Bitmap317,*/
+	Bitmap318, Bitmap350, Bitmap351, Bitmap399,
+	Bitmap400, Bitmap401, Bitmap402, Bitmap403,
+	Bitmap404, Bitmap405, Bitmap406, Bitmap407,
+	Bitmap408, Bitmap409, Bitmap410, Bitmap456,
+	Bitmap457, Bitmap499, Bitmap500, Bitmap501,
+	Bitmap502, Bitmap503, Bitmap504, Bitmap507,
+	Bitmap508, Bitmap509, Bitmap510, Bitmap511,
+	Bitmap512, Bitmap513, Bitmap514, Bitmap515,
+	/*Bitmap800, Bitmap801, Bitmap802, Bitmap803,
+	Bitmap804, Bitmap805, Bitmap806, Bitmap807,*/
+	Bitmap900, Bitmap901 /*,Bitmap909*/
+};
+int num[] = {
+	100, 101, 102, 103,
+	104, /*150, 151, 152,*/
+	153, 154, 300, 301,
+	302, 303, 304, 305,
+	306, 307, 308, 309,
+	310, 311, 312, 313,
+	314, 315, 316, /*317,*/
+	318, 350, 351, 399,
+	400, 401, 402, 403,
+	404, 405, 406, 407,
+	408, 409, 410, 456,
+	457, 499, 500, 501,
+	502, 503, 504, 507,
+	508, 509, 510, 511,
+	512, 513, 514, 515,
+	/*800, 801, 802, 803,
+	804, 805, 806, 807,*/
+	900, 901 /*, 999*/
+};
+uint16_t IconBuffer[128 * 128];
 
 /**********方法************/
 void DrawWeather();
@@ -60,6 +101,7 @@ void UpdateNTP();
 void tftSet(const GFXfont *, uint16_t, uint8_t);
 void getTFTTextDifRect(String, String &, int16_t, int16_t);
 void TestDrawRuler();
+void DrawWeatherIcon(int, int, int, int, int, int);
 
 /*********入口************/
 void initSetial() {	 //初始化串口
@@ -98,22 +140,20 @@ void setup() {
 	TaskNTP.initM(UpdateNTP, 5);
 	TaskDrawDateTime.initS(DrawDateTime, 1);
 	TaskDrawWeather.initM(DrawWeather, 1.5);
-	TaskDrawTestRuler.initS(TestDrawRuler, 5);
+	//TaskDrawTestRuler.initS(TestDrawRuler, 5);
 }
 void loop() {
 	TaskNTP.run();
 	TaskDrawDateTime.run();
 	TaskDrawWeather.run();
-	TaskDrawTestRuler.run();
+	//TaskDrawTestRuler.run();
 }
 
 void DrawWeather() {  //绘制天气信息
-	//tft.fillScreen(ILI9341_BLACK);
-	tft.fillRect(0, 200, 320, 80, ILI9341_BLACK);
-
 	tft.setCursor(0, 200);
 
 	if (weatherNow.get()) {	 // 获取天气更新
+		tft.fillRect(0, 200, 320, 80, ILI9341_BLACK);
 		tftSet(&FreeMonoBold9pt7b, ILI9341_WHITE, 1);
 
 		tft.printf("Weather: %s\n", weatherNow.getWeatherText().c_str());
@@ -126,8 +166,6 @@ void DrawWeather() {  //绘制天气信息
 
 		//tft.printf("Icon: %d\n", weatherNow.getIcon());
 		//tft.printf("Update: %s\n", weatherNow.getLastUpdate().substring(0, 16).c_str());
-	} else {
-		tft.println("Update Failed...");
 	}
 }
 void DrawDate() {  //绘制日期
@@ -156,6 +194,7 @@ void UpdateNTP() {	//网络同步时间
 #define TZ_SEC ((TZ)*3600)
 #define DST_SEC ((DST_MN)*60)
 	configTime(TZ_SEC, DST_SEC, "pool.ntp.org", "0.cn.pool.ntp.org", "1.cn.pool.ntp.org");
+	//DrawDateTime();
 	Serial.println("NTP sync!");
 }
 void DrawDateTime() {  //绘制时间和日期
@@ -187,7 +226,7 @@ void getTFTTextDifRect(String news, String &olds, int16_t cx, int16_t cy) {	 //�
 
 	if (olds.length() != 0) {
 		int a = 0;
-		for (int i = 0; i < olds.length(); i++) {
+		for (uint8_t i = 0; i < olds.length(); i++) {
 			a = i;
 			if (news.charAt(i) != olds.charAt(i)) break;
 		}
@@ -211,3 +250,21 @@ void getTFTTextDifRect(String news, String &olds, int16_t cx, int16_t cy) {	 //�
 
 	olds = news;
 }
+void DrawWeatherIcon(int num, int cx, int cy, int W, int H, int N) {
+	N = min(4, N);
+	for (int y = 0; y < H; y++) {
+		for (int x = 0; x < W; x++) {
+			uint16_t tmp = pgm_read_word(&WeatherIconCode[num][y * 32 + x]);
+			int xx = x * N, yy = y * N, ww = W * N;
+			for (int k = 0; k < N; k++) {
+				for (int l = 0; l < N; l++) {
+					IconBuffer[(yy + k) * ww + xx + l] = tmp;
+				}
+			}
+			yield();
+		}
+	}
+	tft.drawRGBBitmap(20, 20, IconBuffer, W * N, H * N);
+}
+
+//https://a.hecdn.net/img/common/icon/202101/100.png
